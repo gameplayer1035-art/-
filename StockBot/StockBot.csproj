@@ -1,12 +1,19 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
+
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
+
   <ItemGroup>
     <PackageReference Include="Discord.Net" Version="3.15.0" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="8.0.8" />
-    <PackageReference Include="QuickChart" Version="1.4.0" /> <!-- 可选，我们直接用 HTTP 请求生成图表 -->
   </ItemGroup>
+
+  <!-- 移除 FallbackPackageFolders 以避免跨平台构建错误 -->
+  <PropertyGroup>
+    <RestoreAdditionalProjectSources></RestoreAdditionalProjectSources>
+  </PropertyGroup>
+
 </Project>
