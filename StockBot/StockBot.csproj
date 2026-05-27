@@ -11,9 +11,4 @@
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="8.0.8" />
   </ItemGroup>
 
-  <!-- 移除 FallbackPackageFolders 以避免跨平台构建错误 -->
-  <PropertyGroup>
-    <RestoreAdditionalProjectSources></RestoreAdditionalProjectSources>
-  </PropertyGroup>
-
 </Project>
