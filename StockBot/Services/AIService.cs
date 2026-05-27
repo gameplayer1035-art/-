@@ -10,7 +10,7 @@ public class AIService
     public AIService(IConfiguration config)
     {
         _http = new HttpClient();
-        _apiKey = config["GroqApiKey"];
+        _apiKey = config["sk-yuOdkhyxU18mIYzS714c0d32C8724894Ae14A70f0c7a8686"];
         _http.DefaultRequestHeaders.Add("Authorization", $"Bearer {_apiKey}");
     }
 
