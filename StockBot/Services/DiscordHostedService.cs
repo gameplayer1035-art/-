@@ -64,7 +64,7 @@ public class DiscordHostedService : BackgroundService
         var stockService = scope.ServiceProvider.GetRequiredService<StockService>();
         var memoryService = scope.ServiceProvider.GetRequiredService<MemoryService>();
 
-        // 👇 新增：讓使用者可以主動設定偏好的專屬指令
+        // 偏好設定指令
         if (msg.Content.StartsWith("偏好"))
         {
             string newPref = msg.Content.Replace("偏好", "").Replace(":", "").Replace("：", "").Trim();
@@ -90,7 +90,6 @@ public class DiscordHostedService : BackgroundService
         var userPref = await mem.GetUserPreferenceAsync(msg.Author.Id);
         string sectors = userPref?.PreferredSectors ?? "";
 
-        // 👇 修正跳針邏輯：如果沒有偏好，直接給預設值並繼續分析，不再 return 卡死！
         if (string.IsNullOrEmpty(sectors))
         {
             await mem.SaveUserPreferenceAsync(msg.Author.Id, "綜合");
@@ -99,20 +98,25 @@ public class DiscordHostedService : BackgroundService
         }
         else
         {
-            // 有偏好的話，先告訴使用者正在分析，避免他們以為機器人壞掉
             await msg.Channel.SendMessageAsync($"🔍 收到！大師正在為您分析 (根據您的偏好：{sectors})，請稍候...");
         }
 
-        // 呼叫 AI 分析 (這步會花幾秒鐘)
+        // 呼叫 AI 產生分析與連結
         string analysis = await ai.GenerateStockAdviceAsync(sectors, msg.Content);
         
-        if (msg.Content.Contains("圖表") || msg.Content.Contains("走勢"))
+        // 👇 擴充關鍵字：加入大量繁簡體的畫圖指令
+        if (msg.Content.Contains("图表") || msg.Content.Contains("圖表") || 
+            msg.Content.Contains("走势") || msg.Content.Contains("走勢") || 
+            msg.Content.Contains("图片") || msg.Content.Contains("圖片") ||
+            msg.Content.Contains("統計圖") || msg.Content.Contains("圓餅圖") || 
+            msg.Content.Contains("長條圖") || msg.Content.Contains("折線圖"))
         {
-            string chartUrl = await stock.GenerateChartAsync(sectors);
+            // 動態呼叫 AI 產生專屬圖表
+            string chartUrl = await stock.GenerateDynamicChartAsync(msg.Content, analysis, ai);
             var embed = new EmbedBuilder()
-                .WithTitle("股票走勢參考圖")
+                .WithTitle("📊 專屬數據視覺化圖表")
                 .WithImageUrl(chartUrl)
-                .WithDescription(analysis)
+                .WithDescription(analysis) // 這裡的文字結尾已經會包含新聞/影片連結了
                 .Build();
             await msg.Channel.SendMessageAsync(embed: embed);
         }
