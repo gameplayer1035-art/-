@@ -28,14 +28,35 @@ public class DiscordHostedService : BackgroundService
             AlwaysDownloadUsers = true
         };
         _client = new DiscordSocketClient(discordConfig);
+
+        // 👇 關鍵新增：把 Discord 內部的日誌接到我們的主控台！
+        _client.Log += LogAsync;
+    }
+
+    // 👇 關鍵新增：負責把訊息印出來的方法
+    private Task LogAsync(LogMessage log)
+    {
+        Console.WriteLine($"[Discord.NET] {log.ToString()}");
+        return Task.CompletedTask;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         _client.MessageReceived += HandleMessageAsync;
-        await _client.LoginAsync(TokenType.Bot, _config["DiscordToken"]);
-        await _client.StartAsync();
-        await Task.Delay(Timeout.Infinite, stoppingToken);
+        
+        try 
+        {
+            // 嘗試登入與連線
+            string token = _config["DiscordToken"] ?? throw new ArgumentNullException("DiscordToken is missing!");
+            await _client.LoginAsync(TokenType.Bot, token);
+            await _client.StartAsync();
+            await Task.Delay(Timeout.Infinite, stoppingToken);
+        }
+        catch (Exception ex)
+        {
+            // 捕捉任何致命錯誤並印出來
+            Console.WriteLine($"[CRITICAL ERROR] 機器人啟動失敗: {ex.Message}");
+        }
     }
 
     private async Task HandleMessageAsync(SocketMessage msg)
@@ -48,7 +69,6 @@ public class DiscordHostedService : BackgroundService
         var stockService = scope.ServiceProvider.GetRequiredService<StockService>();
         var memoryService = scope.ServiceProvider.GetRequiredService<MemoryService>();
 
-        // 1. 先判斷用戶意圖：閒聊 or 股票分析
         string intent = await aiService.DetectIntentAsync(msg.Content);
         switch (intent)
         {
@@ -61,10 +81,8 @@ public class DiscordHostedService : BackgroundService
         }
     }
 
-    // 处理股票请求
     private async Task HandleStockRequest(SocketMessage msg, AIService ai, StockService stock, MemoryService mem)
     {
-        // 檢查用戶偏好是否已存在
         var userPref = await mem.GetUserPreferenceAsync(msg.Author.Id);
         if (userPref == null)
         {
@@ -72,9 +90,7 @@ public class DiscordHostedService : BackgroundService
             return;
         }
 
-        // 調用 AI 獲取分析建議（結合用戶偏好）
         string analysis = await ai.GenerateStockAdviceAsync(userPref.PreferredSectors ?? "", msg.Content);
-        // 可能需要生成圖表，先判斷是否需要圖表關鍵詞
         if (msg.Content.Contains("圖表") || msg.Content.Contains("走勢"))
         {
             string chartUrl = await stock.GenerateChartAsync(userPref.PreferredSectors ?? "");
@@ -91,7 +107,6 @@ public class DiscordHostedService : BackgroundService
         }
     }
 
-    // 閒聊
     private async Task HandleChat(SocketMessage msg, AIService ai, MemoryService mem)
     {
         string reply = await ai.ChatAsync(msg.Author.Username, msg.Content);
