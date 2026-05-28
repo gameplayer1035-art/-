@@ -1,4 +1,3 @@
-using StockBot.Services;
 using Microsoft.EntityFrameworkCore;
 using StockBot.Data;
 
