@@ -1,5 +1,8 @@
 using StockBot.Data;
 using Microsoft.EntityFrameworkCore;
+using System.Threading.Tasks;
+
+namespace StockBot.Services;
 
 public class MemoryService
 {
@@ -7,7 +10,7 @@ public class MemoryService
 
     public MemoryService(BotDbContext db) => _db = db;
 
-    public async Task<UserPreference> GetUserPreferenceAsync(ulong userId)
+    public async Task<UserPreference?> GetUserPreferenceAsync(ulong userId)
     {
         return await _db.UserPreferences.FirstOrDefaultAsync(u => u.UserId == userId);
     }
@@ -25,17 +28,4 @@ public class MemoryService
         }
         await _db.SaveChangesAsync();
     }
-}
-
-// 数据库上下文
-public class BotDbContext : DbContext
-{
-    public BotDbContext(DbContextOptions<BotDbContext> options) : base(options) { }
-    public DbSet<UserPreference> UserPreferences { get; set; }
-}
-
-public class UserPreference
-{
-    public ulong UserId { get; set; }
-    public string PreferredSectors { get; set; } = "";
 }
