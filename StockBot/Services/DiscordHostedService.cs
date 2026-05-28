@@ -28,12 +28,9 @@ public class DiscordHostedService : BackgroundService
             AlwaysDownloadUsers = true
         };
         _client = new DiscordSocketClient(discordConfig);
-
-        // 👇 關鍵新增：把 Discord 內部的日誌接到我們的主控台！
         _client.Log += LogAsync;
     }
 
-    // 👇 關鍵新增：負責把訊息印出來的方法
     private Task LogAsync(LogMessage log)
     {
         Console.WriteLine($"[Discord.NET] {log.ToString()}");
@@ -46,7 +43,6 @@ public class DiscordHostedService : BackgroundService
         
         try 
         {
-            // 嘗試登入與連線
             string token = _config["DiscordToken"] ?? throw new ArgumentNullException("DiscordToken is missing!");
             await _client.LoginAsync(TokenType.Bot, token);
             await _client.StartAsync();
@@ -54,7 +50,6 @@ public class DiscordHostedService : BackgroundService
         }
         catch (Exception ex)
         {
-            // 捕捉任何致命錯誤並印出來
             Console.WriteLine($"[CRITICAL ERROR] 機器人啟動失敗: {ex.Message}");
         }
     }
@@ -68,6 +63,15 @@ public class DiscordHostedService : BackgroundService
         var aiService = scope.ServiceProvider.GetRequiredService<AIService>();
         var stockService = scope.ServiceProvider.GetRequiredService<StockService>();
         var memoryService = scope.ServiceProvider.GetRequiredService<MemoryService>();
+
+        // 👇 新增：讓使用者可以主動設定偏好的專屬指令
+        if (msg.Content.StartsWith("偏好"))
+        {
+            string newPref = msg.Content.Replace("偏好", "").Replace(":", "").Replace("：", "").Trim();
+            await memoryService.SaveUserPreferenceAsync(msg.Author.Id, newPref);
+            await msg.Channel.SendMessageAsync($"✅ 大師已將您的偏好牢牢記住：**{newPref}**！現在您可以問我股票了。");
+            return;
+        }
 
         string intent = await aiService.DetectIntentAsync(msg.Content);
         switch (intent)
@@ -84,16 +88,27 @@ public class DiscordHostedService : BackgroundService
     private async Task HandleStockRequest(SocketMessage msg, AIService ai, StockService stock, MemoryService mem)
     {
         var userPref = await mem.GetUserPreferenceAsync(msg.Author.Id);
-        if (userPref == null)
+        string sectors = userPref?.PreferredSectors ?? "";
+
+        // 👇 修正跳針邏輯：如果沒有偏好，直接給預設值並繼續分析，不再 return 卡死！
+        if (string.IsNullOrEmpty(sectors))
         {
-            await msg.Channel.SendMessageAsync("請問您偏好哪種類型的股票？例如：科技股、能源股、ETF、短期交易等。");
-            return;
+            await mem.SaveUserPreferenceAsync(msg.Author.Id, "綜合");
+            sectors = "綜合";
+            await msg.Channel.SendMessageAsync("💡 提示：我尚未記錄您的偏好，目前以「綜合」角度為您分析。\n*(您可以隨時輸入「偏好：科技股」來設定)*\n\n🔍 **大師正在發功分析中，請稍候...**");
+        }
+        else
+        {
+            // 有偏好的話，先告訴使用者正在分析，避免他們以為機器人壞掉
+            await msg.Channel.SendMessageAsync($"🔍 收到！大師正在為您分析 (根據您的偏好：{sectors})，請稍候...");
         }
 
-        string analysis = await ai.GenerateStockAdviceAsync(userPref.PreferredSectors ?? "", msg.Content);
+        // 呼叫 AI 分析 (這步會花幾秒鐘)
+        string analysis = await ai.GenerateStockAdviceAsync(sectors, msg.Content);
+        
         if (msg.Content.Contains("圖表") || msg.Content.Contains("走勢"))
         {
-            string chartUrl = await stock.GenerateChartAsync(userPref.PreferredSectors ?? "");
+            string chartUrl = await stock.GenerateChartAsync(sectors);
             var embed = new EmbedBuilder()
                 .WithTitle("股票走勢參考圖")
                 .WithImageUrl(chartUrl)
