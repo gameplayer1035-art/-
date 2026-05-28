@@ -9,17 +9,14 @@ public class AIService
     private readonly HttpClient _http;
     private readonly string? _apiKey;
     
-    // 1. 改成你提供的第三方 API 網址 (記得結尾要加上 chat/completions 才是完整的對話端點)
+    // 第三方 API 網址
     private const string API_URL = "https://free.v36.cm/v1/chat/completions"; 
 
     public AIService(IConfiguration config)
     {
         _http = new HttpClient();
-        // 2. 這裡改為讀取名為 OpenAIApiKey 的環境變數
         _apiKey = config["OpenAIApiKey"];
         _http.DefaultRequestHeaders.Add("Authorization", $"Bearer {_apiKey}");
-        
-        // 根據你提供的 Python 範例，加上這個預設的 Header
         _http.DefaultRequestHeaders.Add("x-foo", "true"); 
     }
 
@@ -32,7 +29,8 @@ public class AIService
 
     public async Task<string> GenerateStockAdviceAsync(string sectors, string query)
     {
-        string prompt = $"用戶偏好：{sectors}。請根據當前市場情況，給出關於“{query}”的股票分析和建議。";
+        // 👇 這裡新增了強制要求 AI 給出文章、新聞或影片連結的指令！
+        string prompt = $"用戶偏好：{sectors}。請根據當前市場情況，給出關於“{query}”的股票分析和建議。\n\n【重要規定】：請務必在回答的最後一段，提供 2~3 個實用的相關真實連結，例如 Yahoo Finance 的該股票頁面、鉅亨網(cnYES)的相關新聞網址，或者是推薦的 YouTube 財經教學/分析影片搜尋連結，讓用戶可以點擊觀看更多資訊。";
         return await CallLLMAsync(prompt, "");
     }
 
@@ -49,11 +47,24 @@ public class AIService
         return response.ToLower().Contains("true");
     }
 
+    // 👇 教 AI 寫出各種圖表 (圓餅圖、長條圖、折線圖) 的設定檔
+    public async Task<string> GenerateChartConfigAsync(string query, string analysis)
+    {
+        string systemPrompt = @"你是一個專業的數據視覺化專家。請根據用戶的問題與分析，生成一個給 QuickChart.io 使用的 Chart.js JSON 設定檔。
+規則：
+1. 【極度重要】只能輸出純 JSON 格式，絕對不要加上 ```json 或任何其他說明文字！
+2. 根據問題選擇最適合的圖表類型 (type)：走勢用 'line'，比較用 'bar' (長條圖)，比例或分配用 'pie' (圓餅圖)。
+3. 數據 (data) 請根據分析內容產生合理的虛擬或推估數據（例如近五天的價格、或是各家公司的市佔率）。
+4. 設定檔必須包含 type, data (含 labels, datasets) 等基本屬性。";
+        
+        string prompt = $"用戶問題：{query}\n分析內容：{analysis}";
+        return await CallLLMAsync(systemPrompt, prompt);
+    }
+
     private async Task<string> CallLLMAsync(string system, string user)
     {
         var body = new
         {
-            // 3. 改成你要的 GPT 模型
             model = "gpt-4o-mini", 
             messages = new[]
             {
@@ -71,7 +82,6 @@ public class AIService
             string errorDetails = await response.Content.ReadAsStringAsync();
             Console.WriteLine($"[自訂 API 錯誤] 狀態碼: {response.StatusCode}");
             Console.WriteLine($"[自訂 API 錯誤] 詳細內容: {errorDetails}");
-            
             return $"AI 系統發生錯誤，無法回應。狀態碼: {response.StatusCode}"; 
         }
 
