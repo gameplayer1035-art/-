@@ -16,7 +16,7 @@ public class AIService
     {
         _http = new HttpClient();
         // 2. 這裡改為讀取名為 OpenAIApiKey 的環境變數
-        _apiKey = config["sk-9N5G61BcvKLbQWIa6aB54830C9E14b6d89F3B2A997Df1dEc"];
+        _apiKey = config["OpenAIApiKey"];
         _http.DefaultRequestHeaders.Add("Authorization", $"Bearer {_apiKey}");
         
         // 根據你提供的 Python 範例，加上這個預設的 Header
