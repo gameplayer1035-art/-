@@ -69,7 +69,7 @@ public class DiscordHostedService : BackgroundService
         {
             string newPref = msg.Content.Replace("偏好", "").Replace(":", "").Replace("：", "").Trim();
             await memoryService.SaveUserPreferenceAsync(msg.Author.Id, newPref);
-            await msg.Channel.SendMessageAsync($"✅ 大師已將您的偏好牢牢記住：**{newPref}**！現在您可以問我股票了。");
+            await msg.Channel.SendMessageAsync($"✅ 大師已將您的偏好牢牢記住：**{newPref}**！現在您可以問我股票或時事了。");
             return;
         }
 
@@ -88,23 +88,26 @@ public class DiscordHostedService : BackgroundService
     private async Task HandleStockRequest(SocketMessage msg, AIService ai, StockService stock, MemoryService mem)
     {
         var userPref = await mem.GetUserPreferenceAsync(msg.Author.Id);
-        string sectors = userPref?.PreferredSectors ?? "";
+        string sectors = userPref?.PreferredSectors ?? "綜合";
 
-        if (string.IsNullOrEmpty(sectors))
+        // 發送提示訊息，告知使用者正在「聯網搜尋」
+        if (string.IsNullOrEmpty(userPref?.PreferredSectors))
         {
             await mem.SaveUserPreferenceAsync(msg.Author.Id, "綜合");
-            sectors = "綜合";
-            await msg.Channel.SendMessageAsync("💡 提示：我尚未記錄您的偏好，目前以「綜合」角度為您分析。\n*(您可以隨時輸入「偏好：科技股」來設定)*\n\n🔍 **大師正在發功分析中，請稍候...**");
+            await msg.Channel.SendMessageAsync("💡 提示：我尚未記錄您的偏好，目前以「綜合」角度為您分析。\n*(您可以隨時輸入「偏好：科技股」來設定)*\n\n🌍 **大師正在為您聯網搜尋全球資訊，請稍候...**");
         }
         else
         {
-            await msg.Channel.SendMessageAsync($"🔍 收到！大師正在為您分析 (根據您的偏好：{sectors})，請稍候...");
+            await msg.Channel.SendMessageAsync($"🌍 收到！大師正在為您聯網搜尋全球資訊 (根據偏好：{sectors})，請稍候...");
         }
 
-        // 呼叫 AI 產生分析與連結
-        string analysis = await ai.GenerateStockAdviceAsync(sectors, msg.Content);
+        // 👇 關鍵更新 1. 聯網抓取最新資訊 (Google 新聞爬蟲)
+        string liveNews = await stock.GetLiveNewsAsync(msg.Content);
+
+        // 👇 關鍵更新 2. 丟給 AI 進行綜合分析 (把 liveNews 當作小抄傳進去)
+        string analysis = await ai.GenerateStockAdviceAsync(sectors, msg.Content, liveNews);
         
-        // 👇 擴充關鍵字：加入大量繁簡體的畫圖指令
+        // 擴充關鍵字：加入大量繁簡體的畫圖指令
         if (msg.Content.Contains("图表") || msg.Content.Contains("圖表") || 
             msg.Content.Contains("走势") || msg.Content.Contains("走勢") || 
             msg.Content.Contains("图片") || msg.Content.Contains("圖片") ||
@@ -114,7 +117,7 @@ public class DiscordHostedService : BackgroundService
             // 動態呼叫 AI 產生專屬圖表
             string chartUrl = await stock.GenerateDynamicChartAsync(msg.Content, analysis, ai);
             var embed = new EmbedBuilder()
-                .WithTitle("📊 專屬數據視覺化圖表")
+                .WithTitle("📊 專屬分析圖表與資訊")
                 .WithImageUrl(chartUrl)
                 .WithDescription(analysis) // 這裡的文字結尾已經會包含新聞/影片連結了
                 .Build();
