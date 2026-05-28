@@ -24,7 +24,8 @@ public class DiscordHostedService : BackgroundService
         _services = services;
         var discordConfig = new DiscordSocketConfig
         {
-            GatewayIntents = GatewayIntents.AllUnprivileged | GatewayIntents.MessageContent,
+            // 👇 修復 1：加入 GatewayIntents.GuildMembers，解決下載用戶清單崩潰的問題
+            GatewayIntents = GatewayIntents.AllUnprivileged | GatewayIntents.MessageContent | GatewayIntents.GuildMembers,
             AlwaysDownloadUsers = true
         };
         _client = new DiscordSocketClient(discordConfig);
@@ -54,35 +55,50 @@ public class DiscordHostedService : BackgroundService
         }
     }
 
-    private async Task HandleMessageAsync(SocketMessage msg)
+    private Task HandleMessageAsync(SocketMessage msg)
     {
-        if (msg.Author.IsBot) return;
-        if (msg.Channel.Id != TARGET_CHANNEL_ID) return;
+        if (msg.Author.IsBot) return Task.CompletedTask;
+        if (msg.Channel.Id != TARGET_CHANNEL_ID) return Task.CompletedTask;
 
-        using var scope = _services.CreateScope();
-        var aiService = scope.ServiceProvider.GetRequiredService<AIService>();
-        var stockService = scope.ServiceProvider.GetRequiredService<StockService>();
-        var memoryService = scope.ServiceProvider.GetRequiredService<MemoryService>();
-
-        // 偏好設定指令
-        if (msg.Content.StartsWith("偏好"))
+        // 👇 修復 2：使用 Task.Run 將耗時的 AI 與 API 請求丟到背景執行，防止卡死 Gateway 導致斷線
+        _ = Task.Run(async () =>
         {
-            string newPref = msg.Content.Replace("偏好", "").Replace(":", "").Replace("：", "").Trim();
-            await memoryService.SaveUserPreferenceAsync(msg.Author.Id, newPref);
-            await msg.Channel.SendMessageAsync($"✅ 大師已將您的偏好牢牢記住：**{newPref}**！現在您可以問我股票或時事了。");
-            return;
-        }
+            try
+            {
+                using var scope = _services.CreateScope();
+                var aiService = scope.ServiceProvider.GetRequiredService<AIService>();
+                var stockService = scope.ServiceProvider.GetRequiredService<StockService>();
+                var memoryService = scope.ServiceProvider.GetRequiredService<MemoryService>();
 
-        string intent = await aiService.DetectIntentAsync(msg.Content);
-        switch (intent)
-        {
-            case "stock":
-                await HandleStockRequest(msg, aiService, stockService, memoryService);
-                break;
-            default:
-                await HandleChat(msg, aiService, memoryService);
-                break;
-        }
+                // 偏好設定指令
+                if (msg.Content.StartsWith("偏好"))
+                {
+                    string newPref = msg.Content.Replace("偏好", "").Replace(":", "").Replace("：", "").Trim();
+                    await memoryService.SaveUserPreferenceAsync(msg.Author.Id, newPref);
+                    await msg.Channel.SendMessageAsync($"✅ 大師已將您的偏好牢牢記住：**{newPref}**！現在您可以問我股票或時事了。");
+                    return;
+                }
+
+                string intent = await aiService.DetectIntentAsync(msg.Content);
+                switch (intent)
+                {
+                    case "stock":
+                        await HandleStockRequest(msg, aiService, stockService, memoryService);
+                        break;
+                    default:
+                        await HandleChat(msg, aiService, memoryService);
+                        break;
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[處理訊息錯誤] {ex}");
+                await msg.Channel.SendMessageAsync("❌ 處理您的請求時發生內部錯誤，請稍後再試。");
+            }
+        });
+
+        // 立即回傳完成狀態，保持連線暢通
+        return Task.CompletedTask;
     }
 
     private async Task HandleStockRequest(SocketMessage msg, AIService ai, StockService stock, MemoryService mem)
@@ -101,10 +117,10 @@ public class DiscordHostedService : BackgroundService
             await msg.Channel.SendMessageAsync($"🌍 收到！大師正在為您聯網搜尋全球資訊 (根據偏好：{sectors})，請稍候...");
         }
 
-        // 👇 關鍵更新 1. 聯網抓取最新資訊 (Google 新聞爬蟲)
+        // 聯網抓取最新資訊 (Google 新聞爬蟲)
         string liveNews = await stock.GetLiveNewsAsync(msg.Content);
 
-        // 👇 關鍵更新 2. 丟給 AI 進行綜合分析 (把 liveNews 當作小抄傳進去)
+        // 丟給 AI 進行綜合分析
         string analysis = await ai.GenerateStockAdviceAsync(sectors, msg.Content, liveNews);
         
         // 擴充關鍵字：加入大量繁簡體的畫圖指令
@@ -119,7 +135,7 @@ public class DiscordHostedService : BackgroundService
             var embed = new EmbedBuilder()
                 .WithTitle("📊 專屬分析圖表與資訊")
                 .WithImageUrl(chartUrl)
-                .WithDescription(analysis) // 這裡的文字結尾已經會包含新聞/影片連結了
+                .WithDescription(analysis) 
                 .Build();
             await msg.Channel.SendMessageAsync(embed: embed);
         }
