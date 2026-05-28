@@ -49,7 +49,7 @@ public class AIService
         return response.ToLower().Contains("true");
     }
 
-    private async Task<string> CallLLMAsync(string system, string user)
+private async Task<string> CallLLMAsync(string system, string user)
     {
         var body = new
         {
@@ -62,7 +62,20 @@ public class AIService
             temperature = 0.7,
             max_tokens = 1024
         };
+        
         var response = await _http.PostAsJsonAsync(API_URL, body);
+        
+        // 👇 新增這段：如果 Groq 報錯，把真正的錯誤原因印到日誌裡
+        if (!response.IsSuccessStatusCode)
+        {
+            string errorDetails = await response.Content.ReadAsStringAsync();
+            Console.WriteLine($"[GROQ API 錯誤] 狀態碼: {response.StatusCode}");
+            Console.WriteLine($"[GROQ API 錯誤] 詳細內容: {errorDetails}");
+            
+            // 讓 Discord 機器人也能在頻道裡跟你回報錯誤
+            return $"AI 系統發生錯誤，無法回應。錯誤碼: {response.StatusCode}"; 
+        }
+
         response.EnsureSuccessStatusCode();
         var json = await response.Content.ReadFromJsonAsync<JsonElement>();
         return json.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString() ?? "";
