@@ -8,17 +8,21 @@ public class AIService
 {
     private readonly HttpClient _http;
     private readonly string? _apiKey;
-    private const string API_URL = "https://api.groq.com/openai/v1/chat/completions"; 
+    
+    // 1. 改成你提供的第三方 API 網址 (記得結尾要加上 chat/completions 才是完整的對話端點)
+    private const string API_URL = "https://free.v36.cm/v1/chat/completions"; 
 
     public AIService(IConfiguration config)
     {
         _http = new HttpClient();
-        // 修正原本將明碼寫在欄位索引處的錯誤，改為讀取 appsettings.json 內的 GroqApiKey 設定
-        _apiKey = config["GroqApiKey"];
+        // 2. 這裡改為讀取名為 OpenAIApiKey 的環境變數
+        _apiKey = config["sk-9N5G61BcvKLbQWIa6aB54830C9E14b6d89F3B2A997Df1dEc"];
         _http.DefaultRequestHeaders.Add("Authorization", $"Bearer {_apiKey}");
+        
+        // 根據你提供的 Python 範例，加上這個預設的 Header
+        _http.DefaultRequestHeaders.Add("x-foo", "true"); 
     }
 
-    // 檢測用戶意圖
     public async Task<string> DetectIntentAsync(string userMessage)
     {
         string systemPrompt = "你是一個意圖分類器。根據用戶消息，只返回一個單詞：'stock'（股票相關）或 'chat'（閒聊）。";
@@ -26,34 +30,31 @@ public class AIService
         return response.ToLower().Contains("stock") ? "stock" : "chat";
     }
 
-    // 生成股票建議
     public async Task<string> GenerateStockAdviceAsync(string sectors, string query)
     {
         string prompt = $"用戶偏好：{sectors}。請根據當前市場情況，給出關於“{query}”的股票分析和建議。";
         return await CallLLMAsync(prompt, "");
     }
 
-    // 閒聊
     public async Task<string> ChatAsync(string userName, string message)
     {
         string prompt = $"你是一個友好的股票助手，與用戶 {userName} 聊天。";
         return await CallLLMAsync(prompt, message);
     }
 
-    // 新增：審核新聞標題是否可靠與相關的方法
     public async Task<bool> CheckArticleReliabilityAsync(string title)
     {
         string systemPrompt = "你是一個財經新聞審核員。判斷這個新聞標題是否與股票、財經或經濟高度相關，且非垃圾農場文。如果是，請只回答 'true'，否則只回答 'false'。";
         var response = await CallLLMAsync(systemPrompt, title);
-        
         return response.ToLower().Contains("true");
     }
 
-private async Task<string> CallLLMAsync(string system, string user)
+    private async Task<string> CallLLMAsync(string system, string user)
     {
         var body = new
         {
-            model = "mixtral-8x7b-32768", 
+            // 3. 改成你要的 GPT 模型
+            model = "gpt-4o-mini", 
             messages = new[]
             {
                 new { role = "system", content = system },
@@ -65,15 +66,13 @@ private async Task<string> CallLLMAsync(string system, string user)
         
         var response = await _http.PostAsJsonAsync(API_URL, body);
         
-        // 👇 新增這段：如果 Groq 報錯，把真正的錯誤原因印到日誌裡
         if (!response.IsSuccessStatusCode)
         {
             string errorDetails = await response.Content.ReadAsStringAsync();
-            Console.WriteLine($"[GROQ API 錯誤] 狀態碼: {response.StatusCode}");
-            Console.WriteLine($"[GROQ API 錯誤] 詳細內容: {errorDetails}");
+            Console.WriteLine($"[自訂 API 錯誤] 狀態碼: {response.StatusCode}");
+            Console.WriteLine($"[自訂 API 錯誤] 詳細內容: {errorDetails}");
             
-            // 讓 Discord 機器人也能在頻道裡跟你回報錯誤
-            return $"AI 系統發生錯誤，無法回應。錯誤碼: {response.StatusCode}"; 
+            return $"AI 系統發生錯誤，無法回應。狀態碼: {response.StatusCode}"; 
         }
 
         response.EnsureSuccessStatusCode();
