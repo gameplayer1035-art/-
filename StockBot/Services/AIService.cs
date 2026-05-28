@@ -1,6 +1,8 @@
+using System;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.Extensions.Configuration;
+using System.Threading.Tasks;
 
 namespace StockBot.Services;
 
@@ -28,10 +30,14 @@ public class AIService
         return response.ToLower().Contains("stock") ? "stock" : "chat";
     }
 
-    // 👇 2. 終極分析大師 Prompt：加入 liveNews 參數，並強制給出新聞與 YouTube 連結
+    // 👇 2. 終極分析大師 Prompt：加入「系統真實時間」，並強制給出新聞與 YouTube 連結
     public async Task<string> GenerateStockAdviceAsync(string sectors, string query, string liveNews)
     {
+        // 取得伺服器現在的真實時間
+        string currentDate = DateTime.Now.ToString("yyyy年MM月dd日");
+
         string prompt = $@"你是一位「全方位國際財經與時事分析大師」。
+【系統當前時間】：今天是 {currentDate}，請務必以這個時間為基準回答。
 用戶偏好/背景：{sectors}
 用戶問題：{query}
 
@@ -49,9 +55,15 @@ public class AIService
         return await CallLLMAsync(prompt, "");
     }
 
+    // 👇 3. 強化閒聊模式：就算是純聊天，也要讓他知道現在是哪一年！
     public async Task<string> ChatAsync(string userName, string message)
     {
-        string prompt = $"你是一個友好的智能助手，與用戶 {userName} 聊天。";
+        // 取得伺服器現在的真實時間
+        string currentDate = DateTime.Now.ToString("yyyy年MM月dd日");
+        
+        string prompt = $@"你是一個友好的智能助手，與用戶 {userName} 聊天。
+【系統重要提示】：現在的真實時間是 {currentDate}。如果用戶問到時間，請根據這個日期回答。絕對不要說你的資料只到 2023 年，因為系統會為你提供最新的資訊。";
+        
         return await CallLLMAsync(prompt, message);
     }
 
@@ -87,7 +99,7 @@ public class AIService
                 new { role = "user", content = user }
             },
             temperature = 0.7,
-            max_tokens = 2000 // 👇 增加 Token 到 2000，讓長篇分析與連結不會被截斷
+            max_tokens = 4000 // 👇 增加 Token 到 2000，讓長篇分析與連結不會被截斷
         };
         
         var response = await _http.PostAsJsonAsync(API_URL, body);
