@@ -2,6 +2,14 @@ using Discord;
 using Discord.WebSocket;
 using StockBot.Data;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using System;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace StockBot.Services;
 
 public class DiscordHostedService : BackgroundService
 {
@@ -40,7 +48,7 @@ public class DiscordHostedService : BackgroundService
         var stockService = scope.ServiceProvider.GetRequiredService<StockService>();
         var memoryService = scope.ServiceProvider.GetRequiredService<MemoryService>();
 
-        // 1. 先判断用户意图：闲聊 or 股票分析
+        // 1. 先判斷用戶意圖：閒聊 or 股票分析
         string intent = await aiService.DetectIntentAsync(msg.Content);
         switch (intent)
         {
@@ -56,23 +64,22 @@ public class DiscordHostedService : BackgroundService
     // 处理股票请求
     private async Task HandleStockRequest(SocketMessage msg, AIService ai, StockService stock, MemoryService mem)
     {
-        // 检查用户偏好是否已存在
+        // 檢查用戶偏好是否已存在
         var userPref = await mem.GetUserPreferenceAsync(msg.Author.Id);
         if (userPref == null)
         {
-            await msg.Channel.SendMessageAsync("请问您偏好哪种类型的股票？例如：科技股、能源股、ETF、短期交易等。");
-            // 下次对话时将自动识别并保存偏好（通过 AI 抽取）
+            await msg.Channel.SendMessageAsync("請問您偏好哪種類型的股票？例如：科技股、能源股、ETF、短期交易等。");
             return;
         }
 
-        // 调用 AI 获取分析建议（结合用户偏好）
-        string analysis = await ai.GenerateStockAdviceAsync(userPref.PreferredSectors, msg.Content);
-        // 可能需要生成图表，先判断是否需要图表关键词
-        if (msg.Content.Contains("图表") || msg.Content.Contains("走势"))
+        // 調用 AI 獲取分析建議（結合用戶偏好）
+        string analysis = await ai.GenerateStockAdviceAsync(userPref.PreferredSectors ?? "", msg.Content);
+        // 可能需要生成圖表，先判斷是否需要圖表關鍵詞
+        if (msg.Content.Contains("圖表") || msg.Content.Contains("走勢"))
         {
-            string chartUrl = await stock.GenerateChartAsync(userPref.PreferredSectors);
+            string chartUrl = await stock.GenerateChartAsync(userPref.PreferredSectors ?? "");
             var embed = new EmbedBuilder()
-                .WithTitle("股票走势参考图")
+                .WithTitle("股票走勢參考圖")
                 .WithImageUrl(chartUrl)
                 .WithDescription(analysis)
                 .Build();
@@ -84,7 +91,7 @@ public class DiscordHostedService : BackgroundService
         }
     }
 
-    // 闲聊
+    // 閒聊
     private async Task HandleChat(SocketMessage msg, AIService ai, MemoryService mem)
     {
         string reply = await ai.ChatAsync(msg.Author.Username, msg.Content);
